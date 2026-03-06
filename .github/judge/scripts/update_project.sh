@@ -37,7 +37,7 @@ LAST_MEMORY="$(jq -r '.memory_kb' "$RESULT_JSON")"
 
 PR_NODE_ID="$(gh api "repos/${REPO}/pulls/${PR_NUMBER}" --jq .node_id)"
 
-PROJECT_QUERY='query($projectId: ID!) { node(id: $projectId) { ... on ProjectV2 { fields(first: 50) { nodes { ... on ProjectV2FieldCommon { id name } } } items(first: 100) { nodes { id content { ... on PullRequest { id number } } fieldValues(first: 30) { nodes { ... on ProjectV2ItemFieldNumberValue { field { ... on ProjectV2FieldCommon { id name } } number } ... on ProjectV2ItemFieldTextValue { field { ... on ProjectV2FieldCommon { id name } } text } } } } } } } }'
+PROJECT_QUERY='query($projectId: ID!) { node(id: $projectId) { ... on ProjectV2 { fields(first: 50) { nodes { ... on ProjectV2FieldCommon { id name dataType } ... on ProjectV2SingleSelectField { options { id name } } } } items(first: 100) { nodes { id content { ... on PullRequest { id number } } fieldValues(first: 30) { nodes { ... on ProjectV2ItemFieldNumberValue { field { ... on ProjectV2FieldCommon { id name } } number } ... on ProjectV2ItemFieldTextValue { field { ... on ProjectV2FieldCommon { id name } } text } ... on ProjectV2ItemFieldSingleSelectValue { field { ... on ProjectV2FieldCommon { id name } } name optionId } } } } } } } }'
 
 PROJECT_DATA="$(gh api graphql -f query="$PROJECT_QUERY" -F projectId="$PROJECT_ID")"
 
@@ -46,6 +46,27 @@ field_id_by_name() {
   jq -r --arg n "$field_name" '
     .data.node.fields.nodes[]
     | select(.name == $n)
+    | .id
+  ' <<<"$PROJECT_DATA" | head -n1
+}
+
+field_type_by_name() {
+  local field_name="$1"
+  jq -r --arg n "$field_name" '
+    .data.node.fields.nodes[]
+    | select(.name == $n)
+    | .dataType
+  ' <<<"$PROJECT_DATA" | head -n1
+}
+
+single_select_option_id() {
+  local field_name="$1"
+  local option_name="$2"
+  jq -r --arg f "$field_name" --arg o "$option_name" '
+    .data.node.fields.nodes[]
+    | select(.name == $f)
+    | .options[]?
+    | select(.name == $o)
     | .id
   ' <<<"$PROJECT_DATA" | head -n1
 }
@@ -88,7 +109,7 @@ CURRENT_STATE="$(jq -r --arg pr "$PR_NODE_ID" '
   | (
       [.fieldValues.nodes[]
         | select(.field.name == "state")
-        | .text
+        | (.text // .name)
       ][0] // "FAIL"
     )
 ' <<<"$PROJECT_DATA" | head -n1)"
@@ -144,12 +165,34 @@ else
 fi
 
 TEXT_MUTATION='mutation($projectId: ID!, $itemId: ID!, $fieldId: ID!, $value: String!) { updateProjectV2ItemFieldValue(input: {projectId: $projectId, itemId: $itemId, fieldId: $fieldId, value: { text: $value }}) { projectV2Item { id } } }'
+SINGLE_SELECT_MUTATION='mutation($projectId: ID!, $itemId: ID!, $fieldId: ID!, $optionId: String!) { updateProjectV2ItemFieldValue(input: {projectId: $projectId, itemId: $itemId, fieldId: $fieldId, value: { singleSelectOptionId: $optionId }}) { projectV2Item { id } } }'
 NUMBER_MUTATION='mutation($projectId: ID!, $itemId: ID!, $fieldId: ID!, $value: Float!) { updateProjectV2ItemFieldValue(input: {projectId: $projectId, itemId: $itemId, fieldId: $fieldId, value: { number: $value }}) { projectV2Item { id } } }'
 
-gh api graphql -f query="$TEXT_MUTATION" -F projectId="$PROJECT_ID" -F itemId="$ITEM_ID" -F fieldId="$FIELD_PROBLEM_ID" -F value="$PROBLEM" >/dev/null
-gh api graphql -f query="$TEXT_MUTATION" -F projectId="$PROJECT_ID" -F itemId="$ITEM_ID" -F fieldId="$FIELD_LANGUAGE_ID" -F value="$LANGUAGE" >/dev/null
-gh api graphql -f query="$TEXT_MUTATION" -F projectId="$PROJECT_ID" -F itemId="$ITEM_ID" -F fieldId="$FIELD_STATE_ID" -F value="$NEXT_STATE" >/dev/null
-gh api graphql -f query="$TEXT_MUTATION" -F projectId="$PROJECT_ID" -F itemId="$ITEM_ID" -F fieldId="$FIELD_LAST_STATE_ID" -F value="$LAST_STATE" >/dev/null
+update_text_or_single_select_field() {
+  local field_name="$1"
+  local field_id="$2"
+  local field_value="$3"
+
+  local field_type
+  field_type="$(field_type_by_name "$field_name")"
+
+  if [[ "$field_type" == "SINGLE_SELECT" ]]; then
+    local option_id
+    option_id="$(single_select_option_id "$field_name" "$field_value")"
+    if [[ -z "$option_id" || "$option_id" == "null" ]]; then
+      echo "[project] single_select option not found: field=$field_name option=$field_value" >&2
+      exit 1
+    fi
+    gh api graphql -f query="$SINGLE_SELECT_MUTATION" -F projectId="$PROJECT_ID" -F itemId="$ITEM_ID" -F fieldId="$field_id" -F optionId="$option_id" >/dev/null
+  else
+    gh api graphql -f query="$TEXT_MUTATION" -F projectId="$PROJECT_ID" -F itemId="$ITEM_ID" -F fieldId="$field_id" -F value="$field_value" >/dev/null
+  fi
+}
+
+update_text_or_single_select_field "problem" "$FIELD_PROBLEM_ID" "$PROBLEM"
+update_text_or_single_select_field "language" "$FIELD_LANGUAGE_ID" "$LANGUAGE"
+update_text_or_single_select_field "state" "$FIELD_STATE_ID" "$NEXT_STATE"
+update_text_or_single_select_field "last-state" "$FIELD_LAST_STATE_ID" "$LAST_STATE"
 gh api graphql -f query="$NUMBER_MUTATION" -F projectId="$PROJECT_ID" -F itemId="$ITEM_ID" -F fieldId="$FIELD_MIN_SCORE_ID" -F value="$MIN_SCORE" >/dev/null
 gh api graphql -f query="$NUMBER_MUTATION" -F projectId="$PROJECT_ID" -F itemId="$ITEM_ID" -F fieldId="$FIELD_MAX_SCORE_ID" -F value="$MAX_SCORE" >/dev/null
 gh api graphql -f query="$NUMBER_MUTATION" -F projectId="$PROJECT_ID" -F itemId="$ITEM_ID" -F fieldId="$FIELD_LAST_SCORE_ID" -F value="$LAST_SCORE" >/dev/null
