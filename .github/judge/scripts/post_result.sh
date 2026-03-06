@@ -35,9 +35,6 @@ MEMORY_KB="$(jq -r '.memory_kb' "$RESULT_JSON")"
 BODY=$(cat <<EOF_BODY
 ## Judge Result
 
-- problem: $PROBLEM_ID
-- language: $LANGUAGE
-- submission: $SUBMISSION_PATH
 - state: $DETAIL
 - score: $SCORE
 - time: $TIME_MS ms
