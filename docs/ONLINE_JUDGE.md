@@ -108,6 +108,11 @@ Required fields (recommended types):
 
 Required secrets/variables:
 - `PROJECT_ID`
+- `PROJECTS_TOKEN` (optional, recommended)
+
+Notes:
+- `PROJECT_ID` must be the ProjectV2 GraphQL node id (`PVT_...`), not the URL numeric project number.
+- If project update fails with `Resource not accessible by integration` even on non-fork PRs, set `PROJECTS_TOKEN` (PAT) with `project` scope. Workflow will use `PROJECTS_TOKEN` first, then fallback to `GITHUB_TOKEN`.
 
 `GITHUB_TOKEN` needs `pull-requests: write`, `issues: write`, `repository-projects: write` permissions.
 

@@ -155,6 +155,10 @@ jobs:
           bash .github/judge/scripts/post_result.sh judge-result.json "${{ needs.validate.outputs.pr_number }}"
 
       - name: Update project leaderboard
+        if: ${{ env.PROJECT_ID != '' }}
+        continue-on-error: true
+        env:
+          GH_TOKEN: ${{ secrets.PROJECTS_TOKEN || github.token }}
         shell: bash
         run: |
           set -euo pipefail
