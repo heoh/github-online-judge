@@ -90,6 +90,9 @@ Cache Docker image tar with `actions/cache`.
 - cache hit: `docker load`
 - cache miss: build then `docker save`
 
+Image note:
+- `isolate` is installed from the official UCW apt repository (`www.ucw.cz`).
+
 ## 6. GitHub Projects required fields
 
 The project uses PRs as items.
