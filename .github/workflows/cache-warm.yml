@@ -1,0 +1,43 @@
+name: warm-judge-cache
+
+on:
+  push:
+    branches:
+      - main
+    paths:
+      - .github/judge/Dockerfile
+      - .github/workflows/cache-warm.yml
+      - .github/workflows/judge.yml
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  warm-docker-image-cache:
+    runs-on: ubuntu-latest
+    env:
+      JUDGE_IMAGE_NAME: local/judge-base:latest
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Restore Docker image cache
+        id: cache-image
+        uses: actions/cache@v4
+        with:
+          path: /tmp/judge-base-image.tar
+          key: judge-image-${{ runner.os }}-${{ hashFiles('.github/judge/Dockerfile') }}
+
+      - name: Load cached Docker image
+        if: steps.cache-image.outputs.cache-hit == 'true'
+        shell: bash
+        run: docker load -i /tmp/judge-base-image.tar
+
+      - name: Build Docker image and save cache
+        if: steps.cache-image.outputs.cache-hit != 'true'
+        shell: bash
+        run: |
+          set -euo pipefail
+          docker build -t "$JUDGE_IMAGE_NAME" -f .github/judge/Dockerfile .
+          docker save "$JUDGE_IMAGE_NAME" -o /tmp/judge-base-image.tar
