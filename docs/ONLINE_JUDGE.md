@@ -99,12 +99,18 @@ The project uses PRs as items.
 
 Required fields (recommended types):
 - `problem` (Text)
-- `language` (Text)
-- `state` (Text)
-- `best-score` (Number)
+- `language` (Enum["cpp", "py"])
+- `state` (Enum["PASS", "FAIL"])
+- `min-score` (Number)
+- `max-score` (Number)
+- `last-state` (Text)
 - `last-score` (Number)
 - `last-time` (Number, ms)
 - `last-memory` (Number, KB)
+
+State semantics:
+- `state` is monotonic: once `PASS`, it never goes back to `FAIL`
+- `last-state`: latest detailed verdict (e.g. `PASS`, `FAIL: RUNTIME_ERROR`)
 
 Required secrets/variables:
 - `PROJECT_ID`
