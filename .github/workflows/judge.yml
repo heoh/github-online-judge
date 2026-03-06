@@ -163,3 +163,17 @@ jobs:
         run: |
           set -euo pipefail
           bash .github/judge/scripts/update_project.sh judge-result.json "${{ needs.validate.outputs.pr_number }}"
+
+      - name: Check pass state
+        shell: bash
+        run: |
+          set -euo pipefail
+
+          CURRENT_STATE="$(jq -r '.state' judge-result.json)"
+
+          if [[ "$CURRENT_STATE" != "PASS" ]]; then
+            echo "Judge gate failed: current state is '$CURRENT_STATE' (expected PASS)."
+            exit 1
+          fi
+
+          echo "Judge gate passed: current state is PASS."
