@@ -1,0 +1,10 @@
+# C/C++
+*.o
+*.obj
+*.out
+
+# Python
+__pycache__/
+*.pyc
+*.pyo
+*.pyd
