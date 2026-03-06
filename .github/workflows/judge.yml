@@ -1,0 +1,161 @@
+name: judge
+
+on:
+  pull_request:
+    types: [opened, synchronize, reopened]
+
+permissions:
+  contents: read
+  pull-requests: write
+  issues: write
+  projects: write
+
+jobs:
+  validate:
+    runs-on: ubuntu-latest
+    outputs:
+      problem_id: ${{ steps.meta.outputs.problem_id }}
+      problem_dir: ${{ steps.meta.outputs.problem_dir }}
+      language: ${{ steps.meta.outputs.language }}
+      submission_path: ${{ steps.meta.outputs.submission_path }}
+      config_path: ${{ steps.meta.outputs.config_path }}
+      pr_number: ${{ steps.pr.outputs.pr_number }}
+      should_judge: ${{ steps.pr.outputs.should_judge }}
+      base_sha: ${{ steps.sha.outputs.base_sha }}
+      head_sha: ${{ steps.sha.outputs.head_sha }}
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+
+      - name: Resolve SHAs
+        id: sha
+        shell: bash
+        run: |
+          set -euo pipefail
+          BASE_SHA="${{ github.event.pull_request.base.sha }}"
+          HEAD_SHA="${{ github.event.pull_request.head.sha }}"
+
+          echo "base_sha=$BASE_SHA" >> "$GITHUB_OUTPUT"
+          echo "head_sha=$HEAD_SHA" >> "$GITHUB_OUTPUT"
+
+      - name: Resolve PR number
+        id: pr
+        env:
+          GH_TOKEN: ${{ github.token }}
+        shell: bash
+        run: |
+          set -euo pipefail
+          PR_NUMBER="${{ github.event.pull_request.number }}"
+
+          if [[ -z "${PR_NUMBER}" ]]; then
+            echo "should_judge=false" >> "$GITHUB_OUTPUT"
+            echo "pr_number=" >> "$GITHUB_OUTPUT"
+            exit 0
+          fi
+
+          echo "should_judge=true" >> "$GITHUB_OUTPUT"
+          echo "pr_number=$PR_NUMBER" >> "$GITHUB_OUTPUT"
+
+      - name: Validate submission (fast)
+        if: steps.pr.outputs.should_judge == 'true'
+        shell: bash
+        run: |
+          set -euo pipefail
+          bash .github/judge/scripts/validate_submission.sh \
+            "${{ steps.sha.outputs.base_sha }}" \
+            "${{ steps.sha.outputs.head_sha }}" \
+            judge-meta.env
+
+      - name: Export meta outputs
+        if: steps.pr.outputs.should_judge == 'true'
+        id: meta
+        shell: bash
+        run: |
+          set -euo pipefail
+          source judge-meta.env
+          echo "problem_id=$PROBLEM_ID" >> "$GITHUB_OUTPUT"
+          echo "problem_dir=$PROBLEM_DIR" >> "$GITHUB_OUTPUT"
+          echo "language=$LANGUAGE" >> "$GITHUB_OUTPUT"
+          echo "submission_path=$SUBMISSION_PATH" >> "$GITHUB_OUTPUT"
+          echo "config_path=$CONFIG_PATH" >> "$GITHUB_OUTPUT"
+
+  judge:
+    if: needs.validate.outputs.should_judge == 'true'
+    needs: [validate]
+    runs-on: ubuntu-latest
+    env:
+      GH_TOKEN: ${{ github.token }}
+      GITHUB_REPOSITORY: ${{ github.repository }}
+      JUDGE_IMAGE_NAME: local/judge-base:latest
+      PROJECT_ID: ${{ secrets.PROJECT_ID }}
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+
+      - name: Rebuild meta file
+        shell: bash
+        run: |
+          set -euo pipefail
+          cat > judge-meta.env <<EOF_META
+          PROBLEM_ID=${{ needs.validate.outputs.problem_id }}
+          PROBLEM_DIR=${{ needs.validate.outputs.problem_dir }}
+          LANGUAGE=${{ needs.validate.outputs.language }}
+          SUBMISSION_PATH=${{ needs.validate.outputs.submission_path }}
+          CONFIG_PATH=${{ needs.validate.outputs.config_path }}
+          EOF_META
+
+      - name: Restore Docker image cache
+        id: cache-image
+        uses: actions/cache@v4
+        with:
+          path: /tmp/judge-base-image.tar
+          key: judge-image-${{ runner.os }}-${{ hashFiles('.github/judge/Dockerfile') }}
+
+      - name: Load cached Docker image
+        if: steps.cache-image.outputs.cache-hit == 'true'
+        shell: bash
+        run: docker load -i /tmp/judge-base-image.tar
+
+      - name: Build Docker image and save cache
+        if: steps.cache-image.outputs.cache-hit != 'true'
+        shell: bash
+        run: |
+          set -euo pipefail
+          docker build -t local/judge-base:latest -f .github/judge/Dockerfile .
+          docker save local/judge-base:latest -o /tmp/judge-base-image.tar
+
+      - name: Ensure image exists
+        shell: bash
+        run: |
+          set -euo pipefail
+          if ! docker image inspect local/judge-base:latest >/dev/null 2>&1; then
+            docker build -t local/judge-base:latest -f .github/judge/Dockerfile .
+          fi
+
+      - name: Judge submission
+        shell: bash
+        run: |
+          set -euo pipefail
+          bash .github/judge/scripts/judge_submission.sh judge-meta.env judge-result.json
+
+      - name: Upload judge result artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: judge-result-${{ github.run_id }}
+          path: judge-result.json
+
+      - name: Post PR comment
+        shell: bash
+        run: |
+          set -euo pipefail
+          bash .github/judge/scripts/post_result.sh judge-result.json "${{ needs.validate.outputs.pr_number }}"
+
+      - name: Update project leaderboard
+        shell: bash
+        run: |
+          set -euo pipefail
+          bash .github/judge/scripts/update_project.sh judge-result.json "${{ needs.validate.outputs.pr_number }}"

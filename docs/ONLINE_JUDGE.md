@@ -47,7 +47,6 @@ Target problem/language is inferred from the added `user-<name>.<ext>` file path
 
 Triggers:
 - `pull_request`
-- `push` (re-judge when users push updates after opening a PR)
 
 Flow:
 1. Detect changed files and validate submission rules.
@@ -105,11 +104,26 @@ Required fields (recommended types):
 
 Required secrets/variables:
 - `PROJECT_ID`
-- `FIELD_LANGUAGE_ID`
-- `FIELD_STATE_ID`
-- `FIELD_BEST_SCORE_ID`
-- `FIELD_LAST_SCORE_ID`
-- `FIELD_LAST_TIME_ID`
-- `FIELD_LAST_MEMORY_ID`
 
 `GITHUB_TOKEN` needs `pull-requests: write`, `issues: write`, `projects: write` permissions.
+
+## 7. Automation files
+
+Implemented files:
+- `.github/workflows/judge.yml`
+- `.github/judge/Dockerfile`
+- `.github/judge/scripts/validate_submission.sh`
+- `.github/judge/scripts/judge_submission.sh`
+- `.github/judge/scripts/post_result.sh`
+- `.github/judge/scripts/update_project.sh`
+
+Execution order in workflow:
+1. `validate_submission.sh` (fast PR rule check)
+2. Docker image cache restore/build (`actions/cache`)
+3. `judge_submission.sh`
+4. `post_result.sh`
+5. `update_project.sh`
+
+Design note:
+- Validation runs as early as possible to fail fast on invalid PRs.
+- Judge run can be slower; correctness is prioritized over speed.
