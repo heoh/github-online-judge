@@ -105,7 +105,7 @@ Required fields (recommended types):
 Required secrets/variables:
 - `PROJECT_ID`
 
-`GITHUB_TOKEN` needs `pull-requests: write`, `issues: write`, `projects: write` permissions.
+`GITHUB_TOKEN` needs `pull-requests: write`, `issues: write`, `repository-projects: write` permissions.
 
 ## 7. Automation files
 
