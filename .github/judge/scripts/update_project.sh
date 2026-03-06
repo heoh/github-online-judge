@@ -25,6 +25,7 @@ if ! command -v jq >/dev/null 2>&1; then
   exit 1
 fi
 
+PROBLEM="$(jq -r '.problem_id' "$RESULT_JSON")"
 LANGUAGE="$(jq -r '.language' "$RESULT_JSON")"
 STATE="$(jq -r '.detail' "$RESULT_JSON")"
 LAST_SCORE="$(jq -r '.score' "$RESULT_JSON")"
@@ -48,6 +49,7 @@ field_id_by_name() {
   ' <<<"$PROJECT_DATA" | head -n1
 }
 
+FIELD_PROBLEM_ID="$(field_id_by_name "problem")"
 FIELD_LANGUAGE_ID="$(field_id_by_name "language")"
 FIELD_STATE_ID="$(field_id_by_name "state")"
 FIELD_BEST_SCORE_ID="$(field_id_by_name "best-score")"
@@ -56,6 +58,7 @@ FIELD_LAST_TIME_ID="$(field_id_by_name "last-time")"
 FIELD_LAST_MEMORY_ID="$(field_id_by_name "last-memory")"
 
 for f in \
+  FIELD_PROBLEM_ID \
   FIELD_LANGUAGE_ID \
   FIELD_STATE_ID \
   FIELD_BEST_SCORE_ID \
@@ -98,6 +101,7 @@ BEST_SCORE="$(awk -v a="$CURRENT_BEST" -v b="$LAST_SCORE" 'BEGIN {print (a>b)?a:
 TEXT_MUTATION='mutation($projectId: ID!, $itemId: ID!, $fieldId: ID!, $value: String!) { updateProjectV2ItemFieldValue(input: {projectId: $projectId, itemId: $itemId, fieldId: $fieldId, value: { text: $value }}) { projectV2Item { id } } }'
 NUMBER_MUTATION='mutation($projectId: ID!, $itemId: ID!, $fieldId: ID!, $value: Float!) { updateProjectV2ItemFieldValue(input: {projectId: $projectId, itemId: $itemId, fieldId: $fieldId, value: { number: $value }}) { projectV2Item { id } } }'
 
+gh api graphql -f query="$TEXT_MUTATION" -F projectId="$PROJECT_ID" -F itemId="$ITEM_ID" -F fieldId="$FIELD_PROBLEM_ID" -F value="$PROBLEM" >/dev/null
 gh api graphql -f query="$TEXT_MUTATION" -F projectId="$PROJECT_ID" -F itemId="$ITEM_ID" -F fieldId="$FIELD_LANGUAGE_ID" -F value="$LANGUAGE" >/dev/null
 gh api graphql -f query="$TEXT_MUTATION" -F projectId="$PROJECT_ID" -F itemId="$ITEM_ID" -F fieldId="$FIELD_STATE_ID" -F value="$STATE" >/dev/null
 gh api graphql -f query="$NUMBER_MUTATION" -F projectId="$PROJECT_ID" -F itemId="$ITEM_ID" -F fieldId="$FIELD_BEST_SCORE_ID" -F value="$BEST_SCORE" >/dev/null

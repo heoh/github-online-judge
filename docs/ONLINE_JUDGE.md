@@ -98,6 +98,7 @@ Image note:
 The project uses PRs as items.
 
 Required fields (recommended types):
+- `problem` (Text)
 - `language` (Text)
 - `state` (Text)
 - `best-score` (Number)
